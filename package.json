@@ -1,0 +1,16 @@
+{
+  "name": "firestore-in-memory",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "dependencies": {
+    "ramda": "^0.27.1",
+    "shortid": "^2.2.16"
+  },
+  "scripts":{
+    "test": "mocha"
+  },
+  "devDependencies": {
+    "mocha": "^8.2.1"
+  }
+}
