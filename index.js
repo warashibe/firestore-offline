@@ -313,6 +313,7 @@ function collection(paths, opt = { where: [], orderBy: [] }) {
       })
   })
 }
+
 function batch() {
   let ops = []
   return {
@@ -329,7 +330,15 @@ function batch() {
       })
   }
 }
-const firestore = () => ({ collection: collection([]), batch })
+
+function runTransaction(fn) {
+  return fn({
+    get: _ref => _ref.get(),
+    update: (_ref, data) => _ref.update(data)
+  })
+}
+
+const firestore = () => ({ collection: collection([]), batch, runTransaction })
 
 firestore.FieldValue = {
   increment: n => ({
