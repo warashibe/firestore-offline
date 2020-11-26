@@ -278,5 +278,24 @@ describe("Firestore", function() {
       assert.equal(data2, null)
       assert.equal(data.foods.length, 1)
     })
+    it("runTransaction", async () => {
+      const col = fs.collection("adv2")
+      const id = await col.add({
+        name: "doe",
+        age: 3
+      })
+      const id2 = await col.add({
+        name: "mary",
+        age: 4
+      })
+      const doc = col.doc(id)
+      const age = await fs.runTransaction(async tx => {
+        const data = (await tx.get(doc)).data()
+        await tx.update(doc, { age: data.age + 1 })
+        return data.age
+      })
+      const data2 = (await doc.get()).data()
+      assert.equal(data2.age, 4)
+    })
   })
 })
