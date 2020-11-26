@@ -313,8 +313,23 @@ function collection(paths, opt = { where: [], orderBy: [] }) {
       })
   })
 }
-
-const firestore = () => ({ collection: collection([]) })
+function batch() {
+  let ops = []
+  return {
+    set: (_ref, data, opt = {}) =>
+      ops.push({ op: "set", ref: _ref, data: data, opt }),
+    update: (_ref, data) => ops.push({ op: "update", ref: _ref, data: data }),
+    delete: _ref => ops.push({ op: "delete", ref: _ref }),
+    commit: () =>
+      new Promise(async res => {
+        for (let op of ops) {
+          await op.ref[op.op](op.data, op.opt)
+        }
+        res(true)
+      })
+  }
+}
+const firestore = () => ({ collection: collection([]), batch })
 
 firestore.FieldValue = {
   increment: n => ({
