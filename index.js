@@ -1,4 +1,5 @@
 const {
+  equals,
   without,
   concat,
   difference,
@@ -12,9 +13,6 @@ const {
   intersection,
   includes,
   is,
-  cond,
-  always,
-  propEq,
   reverse,
   when,
   sortBy,
@@ -39,6 +37,7 @@ const shortid = require("shortid")
 let config = null
 
 let db = {}
+let subscribes = {}
 
 function build(paths) {
   let _db = db
@@ -58,14 +57,40 @@ function ref(paths) {
   return _db
 }
 
+async function broadcast() {
+  for (let s in subscribes) {
+    const sub = subscribes[s]
+    const ss = await sub.ref.get()
+    const new_data = sub.type === "doc" ? ss.data() : ss._raw
+    if (!equals(sub.data, new_data)) {
+      sub.data = clone(new_data)
+      sub.fn(ss)
+    }
+  }
+}
+
 function doc(paths) {
   return name => ({
     collection: collection(append(name)(paths)),
-    get: () =>
-      new Promise((res, rej) => {
-        const data = ref(append(name, paths))
-        res({ exists: data !== null, data: () => data || null, key: name })
-      }),
+    onSnapShot: fn => {
+      const id = shortid.generate()
+      const ref = doc(paths)(name)
+      const ss = ref._get()
+      subscribes[id] = {
+        type: "doc",
+        fn,
+        ref,
+        id,
+        data: clone(ss.data())
+      }
+      subscribes[id].fn(ss)
+      return () => delete subscribes[id]
+    },
+    _get: () => {
+      const data = clone(ref(append(name, paths)))
+      return { exists: data !== null, data: () => data || null, key: name }
+    },
+    get: () => new Promise((res, rej) => res(doc(paths)(name)._get())),
     update: data => {
       new Promise((res, rej) => {
         let _doc = build(paths)
@@ -74,6 +99,7 @@ function doc(paths) {
         } else {
           _doc[name] = make(data, _doc[name])
           res(name)
+          broadcast()
         }
       })
     },
@@ -85,6 +111,7 @@ function doc(paths) {
         } else {
           delete _doc[name]
           res(name)
+          broadcast()
         }
       })
     },
@@ -94,10 +121,12 @@ function doc(paths) {
         if (isNil(_doc[name])) {
           _doc[name] = data
           res(name)
+          broadcast()
         } else {
           if (opt.merge) {
             _doc[name] = make(data, _doc[name])
             res(name)
+            broadcast()
           } else {
             rej("exists")
           }
@@ -133,6 +162,20 @@ function make(data, old = {}) {
 
 function collection(paths, opt = { where: [], orderBy: [] }) {
   return name => ({
+    onSnapShot: fn => {
+      const id = shortid.generate()
+      const ref = collection(paths, opt)(name)
+      const ss = ref._get()
+      subscribes[id] = {
+        type: "collection",
+        fn,
+        ref,
+        id,
+        data: clone(ss._raw)
+      }
+      subscribes[id].fn(ss)
+      return () => delete subscribes[id]
+    },
     doc: doc(append(name)(paths)),
     add: data =>
       new Promise(res => {
@@ -140,6 +183,7 @@ function collection(paths, opt = { where: [], orderBy: [] }) {
         const id = shortid.generate()
         _col[id] = make(data)
         res(id)
+        broadcast()
       }),
     startAt: (...args) =>
       collection(paths, mergeLeft({ startAt: args }, opt))(name),
@@ -161,156 +205,159 @@ function collection(paths, opt = { where: [], orderBy: [] }) {
       )(name),
     limit: n => collection(paths, mergeLeft({ limit: n }, opt))(name),
     get: () =>
-      new Promise(res => {
-        let data = o(values, mapObjIndexed((v, k) => ({ key: k, data: v })))(
-          ref(append(name)(paths))
-        )
-        for (const w of opt.where) {
-          data = filter(v => {
-            if (isNil(v.data[w.field])) return false
-            if (w.op === "==") {
-              return v.data[w.field] === w.val
-            } else if (w.op === "!=") {
-              return v.data[w.field] !== w.val
-            } else if (w.op === ">") {
-              return v.data[w.field] > w.val
-            } else if (w.op === ">=") {
-              return v.data[w.field] >= w.val
-            } else if (w.op === "<") {
-              return v.data[w.field] < w.val
-            } else if (w.op === "<=") {
-              return v.data[w.field] <= w.val
-            } else if (w.op === "in") {
-              return includes(v.data[w.field])(w.val)
-            } else if (w.op === "not-in") {
-              return !includes(v.data[w.field])(w.val)
-            } else if (w.op === "array-contains") {
-              return (
-                is(Array, v.data[w.field]) && includes(w.val)(v.data[w.field])
-              )
-            } else if (w.op === "array-contains-any") {
-              return (
-                is(Array, v.data[w.field]) &&
-                intersection(w.val)(v.data[w.field]).length !== 0
-              )
-            } else {
-              return true
+      new Promise((res, rej) => res(collection(paths, opt)(name)._get())),
+    _get: () => {
+      let data = o(values, mapObjIndexed((v, k) => ({ key: k, data: v })))(
+        ref(append(name)(paths))
+      )
+      for (const w of opt.where) {
+        data = filter(v => {
+          if (isNil(v.data[w.field])) return false
+          if (w.op === "==") {
+            return v.data[w.field] === w.val
+          } else if (w.op === "!=") {
+            return v.data[w.field] !== w.val
+          } else if (w.op === ">") {
+            return v.data[w.field] > w.val
+          } else if (w.op === ">=") {
+            return v.data[w.field] >= w.val
+          } else if (w.op === "<") {
+            return v.data[w.field] < w.val
+          } else if (w.op === "<=") {
+            return v.data[w.field] <= w.val
+          } else if (w.op === "in") {
+            return includes(v.data[w.field])(w.val)
+          } else if (w.op === "not-in") {
+            return !includes(v.data[w.field])(w.val)
+          } else if (w.op === "array-contains") {
+            return (
+              is(Array, v.data[w.field]) && includes(w.val)(v.data[w.field])
+            )
+          } else if (w.op === "array-contains-any") {
+            return (
+              is(Array, v.data[w.field]) &&
+              intersection(w.val)(v.data[w.field]).length !== 0
+            )
+          } else {
+            return true
+          }
+        })(data)
+      }
+      if (opt.orderBy.length !== 0) {
+        data = compose(
+          sortWith(
+            map(
+              v =>
+                v.dir === "asc"
+                  ? ascend(path(["data", v.field]))
+                  : descend(path(["data", v.field]))
+            )(opt.orderBy)
+          ),
+          filter(v => {
+            for (let v2 of pluck("field")(opt.orderBy)) {
+              if (isNil(v.data[v2])) return false
             }
-          })(data)
-        }
-        if (opt.orderBy.length !== 0) {
-          data = compose(
-            sortWith(
-              map(
-                v =>
-                  v.dir === "asc"
-                    ? ascend(path(["data", v.field]))
-                    : descend(path(["data", v.field]))
-              )(opt.orderBy)
-            ),
-            filter(v => {
-              for (let v2 of pluck("field")(opt.orderBy)) {
-                if (isNil(v.data[v2])) return false
+            return true
+          })
+        )(data)
+      }
+      if (!isNil(opt.startAt)) {
+        const min = Math.min(opt.startAt.length, opt.orderBy.length)
+        if (min > 0) {
+          for (const i in range(0, min)) {
+            let ex = false
+            data = filter(v => {
+              if (ex === true) return true
+              if (typeof opt.startAt[i] === "object") {
+                ex = v.key === opt.startAt[i].key
+              } else {
+                ex =
+                  opt.orderBy[i].dir === "asc"
+                    ? v.data[opt.orderBy[i].field] >= opt.startAt[i]
+                    : v.data[opt.orderBy[i].field] <= opt.startAt[i]
               }
-              return true
-            })
-          )(data)
-        }
-        if (!isNil(opt.startAt)) {
-          const min = Math.min(opt.startAt.length, opt.orderBy.length)
-          if (min > 0) {
-            for (const i in range(0, min)) {
-              let ex = false
-              data = filter(v => {
-                if (ex === true) return true
-                if (typeof opt.startAt[i] === "object") {
-                  ex = v.key === opt.startAt[i].key
-                } else {
-                  ex =
-                    opt.orderBy[i].dir === "asc"
-                      ? v.data[opt.orderBy[i].field] >= opt.startAt[i]
-                      : v.data[opt.orderBy[i].field] <= opt.startAt[i]
-                }
-                return ex
-              })(data)
-            }
-          }
-        } else if (!isNil(opt.startAfter)) {
-          const min = Math.min(opt.startAfter.length, opt.orderBy.length)
-          if (min > 0) {
-            for (const i in range(0, min)) {
-              let ex = false
-              data = filter(v => {
-                if (ex === true) return true
-                if (typeof opt.startAfter[i] === "object") {
-                  ex = v.key === opt.startAfter[i].key
-                  if (ex === true) {
-                    return false
-                  }
-                } else {
-                  ex =
-                    opt.orderBy[i].dir === "asc"
-                      ? v.data[opt.orderBy[i].field] > opt.startAfter[i]
-                      : v.data[opt.orderBy[i].field] < opt.startAfter[i]
-                }
-                return ex
-              })(data)
-            }
+              return ex
+            })(data)
           }
         }
-        if (!isNil(opt.endAt)) {
-          const min = Math.min(opt.endAt.length, opt.orderBy.length)
-          if (min > 0) {
-            for (const i in range(0, min)) {
-              let ex = true
-              data = filter(v => {
-                if (ex === false) return false
-                if (typeof opt.endAt[i] === "object") {
-                  if (v.key === opt.endAt[i].key) {
-                    ex = false
-                    return true
-                  }
-                } else {
-                  ex =
-                    opt.orderBy[i].dir === "asc"
-                      ? v.data[opt.orderBy[i].field] <= opt.endAt[i]
-                      : v.data[opt.orderBy[i].field] >= opt.endAt[i]
+      } else if (!isNil(opt.startAfter)) {
+        const min = Math.min(opt.startAfter.length, opt.orderBy.length)
+        if (min > 0) {
+          for (const i in range(0, min)) {
+            let ex = false
+            data = filter(v => {
+              if (ex === true) return true
+              if (typeof opt.startAfter[i] === "object") {
+                ex = v.key === opt.startAfter[i].key
+                if (ex === true) {
+                  return false
                 }
-                return ex
-              })(data)
-            }
-          }
-        } else if (!isNil(opt.endBefore)) {
-          const min = Math.min(opt.endBefore.length, opt.orderBy.length)
-          if (min > 0) {
-            for (const i in range(0, min)) {
-              let ex = true
-              data = filter(v => {
-                if (ex === false) return false
-                if (typeof opt.endBefore[i] === "object") {
-                  if (v.key === opt.endBefore[i].key) ex = false
-                } else {
-                  ex =
-                    opt.orderBy[i].dir === "asc"
-                      ? v.data[opt.orderBy[i].field] < opt.endBefore[i]
-                      : v.data[opt.orderBy[i].field] > opt.endBefore[i]
-                }
-                return ex
-              })(data)
-            }
+              } else {
+                ex =
+                  opt.orderBy[i].dir === "asc"
+                    ? v.data[opt.orderBy[i].field] > opt.startAfter[i]
+                    : v.data[opt.orderBy[i].field] < opt.startAfter[i]
+              }
+              return ex
+            })(data)
           }
         }
-        if (!isNil(opt.limit)) data = slice(0, opt.limit)(data)
-        res({
-          size: data.length,
-          empty: data.length === 0,
-          forEach: fn => {
-            for (let v of data) {
-              fn({ key: v.key, data: () => v.data })
-            }
+      }
+      if (!isNil(opt.endAt)) {
+        const min = Math.min(opt.endAt.length, opt.orderBy.length)
+        if (min > 0) {
+          for (const i in range(0, min)) {
+            let ex = true
+            data = filter(v => {
+              if (ex === false) return false
+              if (typeof opt.endAt[i] === "object") {
+                if (v.key === opt.endAt[i].key) {
+                  ex = false
+                  return true
+                }
+              } else {
+                ex =
+                  opt.orderBy[i].dir === "asc"
+                    ? v.data[opt.orderBy[i].field] <= opt.endAt[i]
+                    : v.data[opt.orderBy[i].field] >= opt.endAt[i]
+              }
+              return ex
+            })(data)
           }
-        })
-      })
+        }
+      } else if (!isNil(opt.endBefore)) {
+        const min = Math.min(opt.endBefore.length, opt.orderBy.length)
+        if (min > 0) {
+          for (const i in range(0, min)) {
+            let ex = true
+            data = filter(v => {
+              if (ex === false) return false
+              if (typeof opt.endBefore[i] === "object") {
+                if (v.key === opt.endBefore[i].key) ex = false
+              } else {
+                ex =
+                  opt.orderBy[i].dir === "asc"
+                    ? v.data[opt.orderBy[i].field] < opt.endBefore[i]
+                    : v.data[opt.orderBy[i].field] > opt.endBefore[i]
+              }
+              return ex
+            })(data)
+          }
+        }
+      }
+      if (!isNil(opt.limit)) data = slice(0, opt.limit)(data)
+      data = clone(data)
+      return {
+        size: data.length,
+        empty: data.length === 0,
+        forEach: fn => {
+          for (let v of data) {
+            fn({ key: v.key, data: () => v.data })
+          }
+        },
+        _raw: pluck("data", data)
+      }
+    }
   })
 }
 
