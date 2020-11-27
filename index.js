@@ -34,7 +34,7 @@ const {
 
 const shortid = require("shortid")
 
-let config = null
+let config = {}
 
 let db = {}
 let subscribes = {}
@@ -67,12 +67,13 @@ async function broadcast() {
       sub.fn(ss)
     }
   }
+  if (!isNil(config.onChange)) config.onChange({ data: db })
 }
 
 function doc(paths) {
   return name => ({
     collection: collection(append(name)(paths)),
-    onSnapShot: fn => {
+    onSnapshot: fn => {
       const id = shortid.generate()
       const ref = doc(paths)(name)
       const ss = ref._get()
@@ -162,7 +163,7 @@ function make(data, old = {}) {
 
 function collection(paths, opt = { where: [], orderBy: [] }) {
   return name => ({
-    onSnapShot: fn => {
+    onSnapshot: fn => {
       const id = shortid.generate()
       const ref = collection(paths, opt)(name)
       const ss = ref._get()
@@ -416,6 +417,7 @@ firestore.FieldValue = {
 module.exports = {
   initializeApp: _config => {
     config = _config
+    if (!isNil(_config.data)) db = clone(_config.data)
   },
   firestore,
   db
