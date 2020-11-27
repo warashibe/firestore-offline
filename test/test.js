@@ -170,12 +170,12 @@ describe("Firestore", function() {
       ss2.forEach(doc => assert.equal(doc.data().name, names2[i2++]))
       assert.equal(ss2.size, 2)
     })
-    it("onSnapShot", function(done) {
+    it("onSnapshot", function(done) {
       ;(async () => {
         const col = fs.collection("col12")
         const id = await col.add({ name: "doe" })
         const id2 = await col.add({ name: "john" })
-        const unsubscribe = col.onSnapShot(ss => {
+        const unsubscribe = col.onSnapshot(ss => {
           if (ss.size === 3) {
             unsubscribe()
             done()
@@ -214,12 +214,12 @@ describe("Firestore", function() {
       const data = (await doc.get()).data()
       assert.equal(data, null)
     })
-    it("onSnapShot", function(done) {
+    it("onSnapshot", function(done) {
       ;(async () => {
         const col = fs.collection("doc5")
         const id = await col.add({ name: "doe" })
         const doc = col.doc(id)
-        const unsubscribe = doc.onSnapShot(ss => {
+        const unsubscribe = doc.onSnapshot(ss => {
           if (ss.data().age === 8) {
             unsubscribe()
             done()
