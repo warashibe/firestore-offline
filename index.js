@@ -57,7 +57,7 @@ function ref(paths) {
   return _db
 }
 
-async function broadcast() {
+async function broadcast(op) {
   for (let s in subscribes) {
     const sub = subscribes[s]
     const ss = await sub.ref.get()
@@ -67,7 +67,7 @@ async function broadcast() {
       sub.fn(ss)
     }
   }
-  if (!isNil(config.onChange)) config.onChange({ data: db })
+  if (!isNil(config.onChange)) config.onChange({ data: db, op })
 }
 
 function doc(paths) {
@@ -100,7 +100,7 @@ function doc(paths) {
         } else {
           _doc[name] = make(data, _doc[name])
           res(name)
-          broadcast()
+          broadcast({ paths, name, data, op: "update" })
         }
       })
     },
@@ -112,7 +112,7 @@ function doc(paths) {
         } else {
           delete _doc[name]
           res(name)
-          broadcast()
+          broadcast({ paths, name, data: null, op: "delete" })
         }
       })
     },
@@ -122,12 +122,12 @@ function doc(paths) {
         if (isNil(_doc[name])) {
           _doc[name] = data
           res(name)
-          broadcast()
+          broadcast({ paths, name, data, op: "set", opt })
         } else {
           if (opt.merge) {
             _doc[name] = make(data, _doc[name])
             res(name)
-            broadcast()
+            broadcast({ paths, name, data, op: "set", opt })
           } else {
             rej("exists")
           }
@@ -184,7 +184,13 @@ function collection(paths, opt = { where: [], orderBy: [] }) {
         const id = shortid.generate()
         _col[id] = make(data)
         res(id)
-        broadcast()
+        broadcast({
+          paths: append(name)(paths),
+          name: id,
+          data,
+          op: "add",
+          opt
+        })
       }),
     startAt: (...args) =>
       collection(paths, mergeLeft({ startAt: args }, opt))(name),
