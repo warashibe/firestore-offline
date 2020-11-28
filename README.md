@@ -57,7 +57,7 @@ fo.initializeApp({
   onChange: async data => await lf.setItem("data", data.data),
   data: (await lf.getItem("data")) || {}
 })
-const fs = sweet(fbls.firestore)
+const fs = sweet(fo.firestore)
 
 (async ()=>{
   const user_id = await fs.add({name: "warashibe"}, "users")
