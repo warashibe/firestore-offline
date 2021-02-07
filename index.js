@@ -29,7 +29,7 @@ const {
   isNil,
   mergeLeft,
   clone,
-  isEmpty
+  isEmpty,
 } = require("ramda")
 
 const shortid = require("shortid")
@@ -82,7 +82,7 @@ function doc(paths) {
         fn,
         ref,
         id,
-        data: clone(ss.data())
+        data: clone(ss.data()),
       }
       subscribes[id].fn(ss)
       return () => delete subscribes[id]
@@ -132,7 +132,7 @@ function doc(paths) {
             rej("exists")
           }
         }
-      })
+      }),
   })
 }
 
@@ -172,7 +172,7 @@ function collection(paths, opt = { where: [], orderBy: [] }) {
         fn,
         ref,
         id,
-        data: clone(ss._raw)
+        data: clone(ss._raw),
       }
       subscribes[id].fn(ss)
       return () => delete subscribes[id]
@@ -189,7 +189,7 @@ function collection(paths, opt = { where: [], orderBy: [] }) {
           name: id,
           data,
           op: "add",
-          opt
+          opt,
         })
       }),
     startAt: (...args) =>
@@ -214,9 +214,10 @@ function collection(paths, opt = { where: [], orderBy: [] }) {
     get: () =>
       new Promise((res, rej) => res(collection(paths, opt)(name)._get())),
     _get: () => {
-      let data = o(values, mapObjIndexed((v, k) => ({ key: k, data: v })))(
-        ref(append(name)(paths))
-      )
+      let data = o(
+        values,
+        mapObjIndexed((v, k) => ({ key: k, data: v }))
+      )(ref(append(name)(paths)))
       for (const w of opt.where) {
         data = filter(v => {
           if (isNil(v.data[w.field])) return false
@@ -253,11 +254,10 @@ function collection(paths, opt = { where: [], orderBy: [] }) {
       if (opt.orderBy.length !== 0) {
         data = compose(
           sortWith(
-            map(
-              v =>
-                v.dir === "asc"
-                  ? ascend(path(["data", v.field]))
-                  : descend(path(["data", v.field]))
+            map(v =>
+              v.dir === "asc"
+                ? ascend(path(["data", v.field]))
+                : descend(path(["data", v.field]))
             )(opt.orderBy)
           ),
           filter(v => {
@@ -269,7 +269,10 @@ function collection(paths, opt = { where: [], orderBy: [] }) {
         )(data)
       }
       if (!isNil(opt.startAt)) {
-        const min = Math.min(opt.startAt.length, opt.orderBy.length)
+        const min =
+          typeof opt.startAt[0] === "object"
+            ? 1
+            : Math.min(opt.startAt.length, opt.orderBy.length)
         if (min > 0) {
           for (const i in range(0, min)) {
             let ex = false
@@ -288,7 +291,10 @@ function collection(paths, opt = { where: [], orderBy: [] }) {
           }
         }
       } else if (!isNil(opt.startAfter)) {
-        const min = Math.min(opt.startAfter.length, opt.orderBy.length)
+        const min =
+          typeof opt.startAfter[0] === "object"
+            ? 1
+            : Math.min(opt.startAfter.length, opt.orderBy.length)
         if (min > 0) {
           for (const i in range(0, min)) {
             let ex = false
@@ -362,9 +368,9 @@ function collection(paths, opt = { where: [], orderBy: [] }) {
             fn({ key: v.key, data: () => v.data })
           }
         },
-        _raw: pluck("data", data)
+        _raw: pluck("data", data),
       }
-    }
+    },
   })
 }
 
@@ -381,14 +387,14 @@ function batch() {
           await op.ref[op.op](op.data, op.opt)
         }
         res(true)
-      })
+      }),
   }
 }
 
 function runTransaction(fn) {
   return fn({
     get: _ref => _ref.get(),
-    update: (_ref, data) => _ref.update(data)
+    update: (_ref, data) => _ref.update(data),
   })
 }
 
@@ -398,26 +404,26 @@ firestore.FieldValue = {
   increment: n => ({
     key: "increment",
     val: n,
-    _FieldValue: true
+    _FieldValue: true,
   }),
   delete: () => ({
     key: "delete",
-    _FieldValue: true
+    _FieldValue: true,
   }),
   serverTimestamp: () => ({
     key: "serverTimestamp",
-    _FieldValue: true
+    _FieldValue: true,
   }),
   arrayUnion: (...args) => ({
     val: args,
     key: "arrayUnion",
-    _FieldValue: true
+    _FieldValue: true,
   }),
   arrayRemove: (...args) => ({
     val: args,
     key: "arrayRemove",
-    _FieldValue: true
-  })
+    _FieldValue: true,
+  }),
 }
 
 module.exports = {
@@ -426,5 +432,5 @@ module.exports = {
     if (!isNil(_config.data)) db = clone(_config.data)
   },
   firestore,
-  db
+  db,
 }
